@@ -1,108 +1,139 @@
-//Intializing Server
+// server.js
 const express = require("express");
-const server = express();
+const mongoose = require("mongoose");
+const cors = require("cors");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+require("dotenv").config();
+
+const { DB_URI, SECRET_KEY } = process.env;
+
+// Models
+const Contact = require("./models/contact");
+const User = require("./models/user");
+
+const app = express();
 const port = 3000;
-const mongoose = require("mongoose"); //import mongoose
-require("dotenv").config(); //import dotenv
-const { DB_URI } = process.env; //to grab the same variable from the dotenv file
-const cors = require("cors"); //For disabling default browser security
-const Contact = require("./models/contact"); //importing the model schema
 
-//Middleware
-server.use(express.json()); //to ensure data is trasmitted as json
-server.use(express.urlencoded({ extended: true })); //to ensure data is encoded and decoded while transmission
-server.use(cors());
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-//Database connection and server listening
+// Connect to MongoDB
 mongoose
   .connect(DB_URI)
-  .then(() => {
-    server.listen(port, () => {
-      console.log(`Database is connected\nServer is listening on ${port}`);
-      console.log(new Date(Date.now()));
-    });
-  })
-  .catch((error) => console.log(error.message));
+  .then(() => console.log("Connected to MongoDB"))
+  .catch((err) => console.log(err));
 
-//Routes
-//Root route
-server.get("/", (request, response) => {
-  response.send("Server is Live!");
+// ----------------- Routes -----------------
+
+// Root
+app.get("/", (req, res) => {
+  res.send("Server is live!");
 });
 
-//To GET all the data from contacts collection
-server.get("/contacts", async (request, response) => {
+// ---------- Contacts CRUD ----------
+
+// GET all contacts
+app.get("/contacts", async (req, res) => {
   try {
     const contacts = await Contact.find();
-    response.send(contacts);
+    res.send(contacts);
   } catch (error) {
-    response.status(500).send({ message: error.message });
+    res.status(500).send({ message: error.message });
   }
 });
 
-//To POST a new contact to DB
-server.post("/contacts", async (request, response) => {
-  const { name, email, address, phone, image } = request.body;
+// POST new contact
+app.post("/contacts", async (req, res) => {
+  const { name, email, address, phone, image } = req.body;
   const newContact = new Contact({
     name,
-    contact: {
-      email,
-      address,
-      phone,
-    },
+    contact: { email, address, phone },
     image,
   });
   try {
     await newContact.save();
-    response.status(200).send({
-      message: `Contact is added successfully!`,
-      date: new Date(Date.now()),
-    });
+    res.status(200).send({ message: "Contact added successfully" });
   } catch (error) {
-    response.status(400).send({ message: error.message });
+    res.status(400).send({ message: error.message });
   }
 });
 
-//To DELETE a contact from DB by it's id
-server.delete("/contacts/:id", async (request, response) => {
-  const { id } = request.params;
+// DELETE contact
+app.delete("/contacts/:id", async (req, res) => {
+  const { id } = req.params;
   try {
     await Contact.findByIdAndDelete(id);
-    response.send({
-      message: `Contact is deleted`,
-      date: new Date(Date.now()),
-    });
+    res.send({ message: "Contact deleted" });
   } catch (error) {
-    response.status(400).send({ message: error.message });
+    res.status(400).send({ message: error.message });
   }
 });
 
-//To GET one contact by id
-server.get("/contacts/:id", async (request, response) => {
-  const { id } = request.params;
+// GET one contact by id
+app.get("/contacts/:id", async (req, res) => {
+  const { id } = req.params;
   try {
-    const contactToEdit = await Contact.findById(id);
-    response.send(contactToEdit);
+    const contact = await Contact.findById(id);
+    res.send(contact);
   } catch (error) {
-    response.status(500).send({ message: error.message });
+    res.status(500).send({ message: error.message });
   }
 });
 
-//To PATCH a contact by id
-server.patch("/contacts/:id", async (request, response) => {
-  const { id } = request.params;
-  const { name, phone, address, email, image } = request.body;
+// PATCH contact
+app.patch("/contacts/:id", async (req, res) => {
+  const { id } = req.params;
+  const { name, email, address, phone, image } = req.body;
   try {
     await Contact.findByIdAndUpdate(id, {
       name,
       contact: { email, address, phone },
       image,
     });
-    response.send({
-      message: `Contact has been updated`,
-      date: new Date(Date.now()),
-    });
+    res.send({ message: "Contact updated" });
   } catch (error) {
-    response.status(500).send({ message: error.message });
+    res.status(500).send({ message: error.message });
   }
 });
+
+// ---------- User Auth ----------
+
+// Register
+app.post("/register", async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = new User({ username, password: hashedPassword });
+    await newUser.save();
+    res.send({ message: "User created!" });
+  } catch (error) {
+    res.status(500).send({
+      message: "User already exists, choose another username",
+    });
+  }
+});
+
+// Login
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const user = await User.findOne({ username });
+    if (!user)
+      return res.status(404).send({ message: "User does not exist" });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match)
+      return res.status(403).send({ message: "Incorrect username or password" });
+
+    const token = jwt.sign({ id: user._id, username }, SECRET_KEY);
+    res.status(201).send({ message: "User Authenticated", token });
+  } catch (error) {
+    res.status(500).send({ message: error.message });
+  }
+});
+
+// Start server
+app.listen(port, () => console.log(`Server listening on port ${port}`));

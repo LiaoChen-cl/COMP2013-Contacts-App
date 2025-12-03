@@ -1,9 +1,52 @@
 import { useState, useEffect } from "react";
+
+import { Link, useNavigate } from "react-router-dom"; // to navigate to other pages
+import Cookies from "js-cookie"; // to get or remove JWT stored in browser cookies
+import { jwtDecode } from "jwt-decode"; // to decode the JWT to get username
+
 import axios from "axios";
 import ContactsCardsContainer from "./ContactsCardsContainer";
 import ContactForm from "./ContactForm";
 
 export default function ContactsApp() {
+  const [currentUser, setCurrentUser] = useState(() => {
+    const jwtToken = Cookies.get("jwt-authorization");
+    if (!jwtToken) return ""; // No token found
+    // Decode token to get username info
+    try {
+      const decodedToken = jwtDecode(jwtToken);
+      return decodedToken.username || "";
+    } catch {
+      return "";
+    }
+  });
+
+  const navigate = useNavigate();
+  //Verify JWT on component mount and redirect if invalid
+  useEffect(() => {
+    const jwtToken = Cookies.get("jwt-authorization"); // Get JWT from cookies
+
+    if (!jwtToken) {
+      navigate("/");
+      return;
+    }
+
+    try {
+      jwtDecode(jwtToken); // Try decoding the token
+      // If decoding is successful, token is valid
+    } catch (error) {
+      console.error("Invalid JWT", error); // Log error for debugging
+      // Redirect to login if token is invalid
+      navigate("/");
+    }
+  }, [navigate]); // Empty dependency array ensures this runs only once on mount
+
+  const handleLogout = () => {
+    Cookies.remove("jwt-authorization");
+    setCurrentUser("");
+    navigate("/");
+  };
+
   //States
   const [contactsData, setContactsData] = useState([]);
   const [formData, setFormData] = useState({
@@ -123,6 +166,14 @@ export default function ContactsApp() {
   //Render
   return (
     <div>
+       {/* Get the username */}
+      <h1>Welcome {currentUser}</h1>
+       {/* logout buttom */}
+      <button onClick={() => handleLogout()}>Logout</button>
+      <br />
+      <br />
+      <br />
+
       <ContactForm
         name={formData.name}
         email={formData.email}
